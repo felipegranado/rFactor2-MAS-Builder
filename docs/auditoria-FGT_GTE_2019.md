@@ -12,6 +12,8 @@
 | `FGT_GTE_2019_engine.ini` | 17060 | 359 | sim | 0 |
 | `FGT_GTE_2019_gears.ini` | 2387 | 96 | sim | 2 |
 
+- Pneu: `GY30-68-18x12.5_31-71-18x13_2022.tbc` — 15654 bytes, **4 compostos** (Soft, Medium, Hard, P2M (Rain)).
+
 ## 2. Defeitos de estrutura
 
 
@@ -102,7 +104,11 @@ O eixo mestre usa so os pontos com **2 membros** (as bandejas). O tirante tem 1 
 - **KPI (inclinacao do eixo mestre): 7.93°**
 - **Caster: 7.02°** (positivo — topo do eixo mestre para tras)
 
-Onde o eixo mestre cruza o solo, em funcao do raio carregado do pneu — **valor que vem do `.tbc`/`.tgm`, nao deste arquivo**:
+Com o raio do `.tbc` (**0.33875 m**):
+- **Scrub radius: 61.1 mm** — o eixo mestre cruza o solo **para dentro** do centro do pneu
+- **Trail mecanico: 31.3 mm** — cruza **a frente** do centro do pneu (com caster positivo o esperado e 'a frente')
+
+Sensibilidade (caso o raio carregado real diverga do `.tbc`):
 
 | Raio carregado (m) | Lateral: scrub (mm) | Longitudinal: trail (mm) |
 |---:|---:|---:|
@@ -111,9 +117,9 @@ Onde o eixo mestre cruza o solo, em funcao do raio carregado do pneu — **valor
 | 0.34 | -60.9 | -31.5 |
 | 0.36 | -58.1 | -33.9 |
 
-Convecao de sinais (roda esquerda, X positivo = para fora):
+Convecao de sinais (roda esquerda; X positivo = para fora, Z positivo = para tras):
 - **Lateral negativo** = o eixo mestre cruza o solo **para dentro** do centro do pneu, em direcao a linha de centro do carro.
-- **Longitudinal negativo** = cruza **a frente** do centro do pneu, o que corresponde a trail mecanico positivo (esperado com caster positivo).
+- **Longitudinal negativo** = cruza **a frente** do centro do pneu, o que corresponde a trail mecanico positivo.
 
 - Referencia: centro da roda em x=0.8321, y=0.2676, z=-1.4363
 - Offset roda↔manga: **45.0 mm** (deve bater com `LocalOffsetB` do `*_BJ`)
@@ -131,7 +137,11 @@ O eixo mestre usa so os pontos com **2 membros** (as bandejas). O tirante tem 1 
 - **KPI (inclinacao do eixo mestre): 8.13°**
 - **Caster: -0.01° — praticamente zero** (esperado: eixo traseiro nao tem caster)
 
-Onde o eixo mestre cruza o solo, em funcao do raio carregado do pneu — **valor que vem do `.tbc`/`.tgm`, nao deste arquivo**:
+Com o raio do `.tbc` (**0.35527 m**):
+- **Scrub radius: 78.9 mm** — o eixo mestre cruza o solo **para dentro** do centro do pneu
+- **Trail mecanico: 0.1 mm** — cruza **a frente** do centro do pneu (com caster positivo o esperado e 'a frente')
+
+Sensibilidade (caso o raio carregado real diverga do `.tbc`):
 
 | Raio carregado (m) | Lateral: scrub (mm) | Longitudinal: trail (mm) |
 |---:|---:|---:|
@@ -140,9 +150,9 @@ Onde o eixo mestre cruza o solo, em funcao do raio carregado do pneu — **valor
 | 0.34 | -81.0 | -0.1 |
 | 0.36 | -78.2 | -0.1 |
 
-Convecao de sinais (roda esquerda, X positivo = para fora):
+Convecao de sinais (roda esquerda; X positivo = para fora, Z positivo = para tras):
 - **Lateral negativo** = o eixo mestre cruza o solo **para dentro** do centro do pneu, em direcao a linha de centro do carro.
-- **Longitudinal negativo** = cruza **a frente** do centro do pneu, o que corresponde a trail mecanico positivo (esperado com caster positivo).
+- **Longitudinal negativo** = cruza **a frente** do centro do pneu, o que corresponde a trail mecanico positivo.
 
 - Referencia: centro da roda em x=0.8400, y=0.2721, z=1.2737
 - Offset roda↔manga: **35.0 mm** (deve bater com `LocalOffsetB` do `*_BJ`)
@@ -194,30 +204,30 @@ Uma caixa de 6 marchas tem progressao de ~2.2x a ~3.5x entre 1a e 6a. As 6 prime
 
 #### Velocidade por marcha no limitador de 7500 rpm
 
-`v = (rpm · 2π / 60) · R / (relacao · diferencial · bevel)`, usando **R = 0.34 m** como hipotese de raio carregado — o valor real vem do `.tbc`.
+`v = (rpm · 2π / 60) · R / (relacao · diferencial · bevel)`, com **R = 0.35527 m** = raio traseiro do `.tbc` (eixo motriz).
 
 
 **Diferencial 10/38 = 3.800** (com bevel 0.9643):
 
 | Marcha | Relacao | Global | km/h |
 |---:|---:|---:|---:|
-| 1 | 2.067 | 7.573 | 126.9 |
-| 2 | 1.647 | 6.035 | 159.3 |
-| 3 | 1.389 | 5.089 | 188.9 |
-| 4 | 1.200 | 4.397 | 218.6 |
-| 5 | 1.050 | 3.847 | 249.9 |
-| 6 | 0.923 | 3.382 | 284.2 |
+| 1 | 2.067 | 7.573 | 132.6 |
+| 2 | 1.647 | 6.035 | 166.4 |
+| 3 | 1.389 | 5.089 | 197.4 |
+| 4 | 1.200 | 4.397 | 228.4 |
+| 5 | 1.050 | 3.847 | 261.1 |
+| 6 | 0.923 | 3.382 | 297.0 |
 
 **Diferencial 10/31 = 3.100** (com bevel 0.9643):
 
 | Marcha | Relacao | Global | km/h |
 |---:|---:|---:|---:|
-| 1 | 2.067 | 6.178 | 155.6 |
-| 2 | 1.647 | 4.924 | 195.3 |
-| 3 | 1.389 | 4.152 | 231.5 |
-| 4 | 1.200 | 3.587 | 268.0 |
-| 5 | 1.050 | 3.139 | 306.3 |
-| 6 | 0.923 | 2.759 | 348.4 |
+| 1 | 2.067 | 6.178 | 162.6 |
+| 2 | 1.647 | 4.924 | 204.0 |
+| 3 | 1.389 | 4.152 | 241.9 |
+| 4 | 1.200 | 3.587 | 280.0 |
+| 5 | 1.050 | 3.139 | 320.0 |
+| 6 | 0.923 | 2.759 | 364.0 |
 
 ## 7. Motor (`_engine.ini`)
 
@@ -250,18 +260,60 @@ Uma caixa de 6 marchas tem progressao de ~2.2x a ~3.5x entre 1a e 6a. As 6 prime
 **Alerta:** 7 linhas `EngineBrakingGear*Limit` estao **comentadas** (mapa de freio-motor por marcha desativado).
 - Marchas com mapa identico: EngineBrakingGear0Limit, EngineBrakingGear6Limit
 
-## 8. Pendencias para fechar a engenharia reversa
+## 8. Pneus (`_tbc`)
+
+Arquivo: `GY30-68-18x12.5_31-71-18x13_2022.tbc`
+
+| Eixo | `Radius` (m) | `Width` (m) | `Rim` (m) | `SpringBase` | `SpringkPa` | `Damper` |
+|---|---:|---:|---:|---:|---:|---:|
+| Dianteiro | 0.33875 | 0.3 | 0.2485 | 148501.1 | 731.13 | 750 |
+| Traseiro | 0.35527 | 0.318 | 0.2485 | 170000 | 765 | 771 |
+
+### Grip por composto
+
+| Composto | Eixo | `DryLatLong` | `LatPeak` | `LongPeak` | `Temperatures` |
+|---|---|---|---|---|---|
+| Soft | D | (1.9536162,1.9248216) | ( 0.112, 0.152, 11000) | (0.116, 0.128, 10600) | (94, 30) |
+| Soft | T | (1.99978,1.9703) | ( 0.11, 0.15, 12000) | (0.115, 0.127, 10700) | (94, 30) |
+| Medium | D | (1.93236,1.90388) | ( 0.112, 0.152, 11000) | (0.116, 0.128, 10600) | (97, 30) |
+| Medium | T | (1.978035,1.9488834) | ( 0.135, 0.165, 12000) | (0.118, 0.131, 12000) | (97, 30) |
+| Hard | D | (1.90944,1.8813) | ( 0.112, 0.152, 11000) | (0.116, 0.128, 10600) | (100, 30) |
+| Hard | T | (1.954575,1.92576) | ( 0.11, 0.15, 12000) | (0.115, 0.127, 10700) | (100, 30) |
+| P2M (Rain) | D | (1.8722202,1.844619) | ( 0.116, 0.158, 11000) | (0.119, 0.131, 10600) | (68, 21) |
+| P2M (Rain) | T | (1.89035,1.86248) | ( 0.114, 0.156, 12000) | (0.118, 0.13, 10700) | (68, 21) |
+
+Comparando apenas os slicks (Soft, Medium, Hard): o composto de chuva difere por design e foi excluido dessa checagem.
+
+
+**Dianteiro: parametro fora do padrao entre os slicks**
+
+| Parametro | Composto divergente | Valor | Demais slicks |
+|---|---|---|---|
+| `Transfer` | **Soft** | `(0.05, 1.92e-3, 3.1e-4)` | `(0.04, 1.92e-3, 2.9e-4)` (Medium, Hard) |
+
+**Traseiro: parametro fora do padrao entre os slicks**
+
+| Parametro | Composto divergente | Valor | Demais slicks |
+|---|---|---|---|
+| `HeatDistrib` | **Soft** | `(12.5,115)` | `(12.5,111)` (Medium, Hard) |
+| `Heating` | **Soft** | `(0.5, 0.016)` | `(0.59, 0.016)` (Medium, Hard) |
+| `LatPeak` | **Medium** | `( 0.135, 0.165, 12000)` | `( 0.11, 0.15, 12000)` (Soft, Hard) |
+| `LongPeak` | **Medium** | `(0.118, 0.131, 12000)` | `(0.115, 0.127, 10700)` (Soft, Hard) |
+| `PneumaticTrail` | **Soft** | `2.1e-6` | `2.0e-6` (Medium, Hard) |
+| `Transfer` | **Soft** | `(0.054, 1.92e-3, 3.0e-4)` | `(0.042, 1.92e-3, 2.7e-4)` (Medium, Hard) |
+
+## 9. Pendencias para fechar a engenharia reversa
 
 | Arquivo | Papel | O que depende dele | Situacao |
 |---|---|---|:--:|
 | `.hdv` | Arquivo mestre do veiculo | massa e inercia do corpo principal, aerodinamica, molas/amortecedores, barras anti-rolagem, `NumGears`, e a linha `UltraChassis=` que aponta para o `_Chassis.ini` | **AUSENTE** |
-| `.tbc` | Pneu (IA + geometria) | raio carregado do pneu — define a altura real do CG e o scrub radius — alem da `CamberCurve`; varias abas da planilha leem daqui | **AUSENTE** |
+| `.tbc` | Pneu (IA + geometria) | raio carregado do pneu — define a altura real do CG e o scrub radius — alem da `CamberCurve`; varias abas da planilha leem daqui | presente |
 | `.tgm` | Modelo de pneu do jogador | necessario se o objetivo incluir mexer em pneu | **AUSENTE** |
 | `.veh` | Manifesto do carro | lista quais arquivos o carro carrega e em que ordem | **AUSENTE** |
 | `.ods` | rF2 Physics Calculator | **FONTE DAS FORMULAS.** Sem ela nao ha como inverter entrada -> saida: este relatorio so le o lado alvo | **AUSENTE** |
 
-## 9. Como ler este relatorio
+## 10. Como ler este relatorio
 
 - **Secoes 3 a 5** sao *medicoes* do carro como ele esta hoje. Nao dependem da planilha: saem direto da geometria do `_Chassis.ini`, com validacao interna (comprimento das barras contra `MinError0`, inercia de guinada contra o limite do modelo halter).
-- **Secoes 2, 6 e 7** sao *defeitos e alertas* — coisas para decidir antes de sair mexendo, porque qualquer baseline montado em cima de arquivo corrompido herda o erro.
-- **A Secao 8** e o que falta para completar o trabalho.
+- **Secoes 2, 6, 7 e 8** sao *defeitos e alertas* — coisas para decidir antes de sair mexendo, porque qualquer baseline montado em cima de arquivo corrompido herda o erro.
+- **A Secao 9** e o que falta para completar o trabalho.

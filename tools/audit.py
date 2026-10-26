@@ -210,9 +210,129 @@ class Chassis:
         return total_m, cg, tuple(I)
 
 
+def _num(v):
+    """Converte para float; devolve None se nao for numero."""
+    try:
+        return float(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_tbc(path: Path) -> list[dict]:
+    """Extrai os compostos de um `.tbc` do rF2.
+
+    O `.tbc` NAO e INI padrao: dentro de `[COMPOUND]` existem rotulos soltos
+    (`Front:` / `Rear:`) que separam os parametros de cada eixo, e os
+    `[SLIPCURVE]` terminam num blob de numeros depois de `Data:`. Entao a
+    unica forma correta e varrer as linhas em ordem lembrando em qual composto
+    e em qual eixo estamos.
+    """
+    text = path.read_bytes().decode("utf-8", errors="replace").replace("\r\n", "\n")
+    compounds: list[dict] = []
+    cur: dict | None = None
+    axle: str | None = None
+
+    for ln, raw in enumerate(text.split("\n"), 1):
+        s = raw.strip()
+        if not s:
+            continue
+        m = re.match(r"^\[\s*([^\]]+?)\s*\]$", s)
+        if m:
+            head = m.group(1).strip().lower()
+            if head == "compound":
+                cur = {"name": None, "front": {}, "rear": {}, "line": ln, "props": {}}
+                compounds.append(cur)
+                axle = None
+            else:
+                cur = None  # [SLIPCURVE] e outros blocos
+            continue
+        low = s.lower()
+        if low.startswith("front:"):
+            axle = "front"
+            continue
+        if low.startswith("rear:"):
+            axle = "rear"
+            continue
+        if cur is None or "=" not in s:
+            continue
+        k, _, v = s.partition("=")
+        k = k.strip()
+        v = v.split("//")[0].strip()  # joga fora comentario de fim de linha
+        if axle is None:
+            if k.lower() == "name" and cur["name"] is None:
+                cur["name"] = v.strip('"')
+            else:
+                cur["props"][k] = v
+        else:
+            cur[axle][k] = v
+    return compounds
+
+
+def tyre_radii(compounds: list[dict]) -> dict[str, float]:
+    """Raio por eixo. Se divergir entre compostos, usa o primeiro e avisa."""
+    out: dict[str, float] = {}
+    for ax in ("front", "rear"):
+        vals = []
+        for c in compounds:
+            r = _num(c.get(ax, {}).get("Radius"))
+            if r is not None:
+                vals.append(r)
+        if vals:
+            out[ax] = vals[0]
+            out[f"{ax}_concorda"] = len(set(vals)) == 1
+    return out
+
+
+def outlier_keys(compounds: list[dict], axle: str, min_majority: int = 2) -> list[dict]:
+    """Parametros onde UM composto diverge dos demais — candidato a erro de digitacao.
+
+    Ideia: para cada parametro, agrupa os compostos pelo valor. Se existir um
+    valor que aparece uma unica vez e outro que aparece em >= 2 compostos, o
+    valor isolado e um outlier. Parametros que variam de proposito entre
+    compostos (DryLatLong, WearRate, Temperatures...) nao casam nesse padrao
+    porque cada composto tem seu proprio valor.
+    """
+    if len(compounds) < 3:
+        return []
+    keys = set()
+    for c in compounds:
+        keys |= set(c.get(axle, {}).keys())
+    out = []
+    for k in sorted(keys):
+        buckets: dict[str, list[str]] = defaultdict(list)
+        for c in compounds:
+            if k in c.get(axle, {}):
+                buckets[c[axle][k]].append(c["name"] or "?")
+        if len(buckets) < 2:
+            continue
+        for val, nomes in buckets.items():
+            outros = [v for v in buckets if v != val]
+            if len(nomes) == 1 and any(len(buckets[o]) >= min_majority for o in outros):
+                out.append(
+                    {
+                        "key": k,
+                        "valor": val,
+                        "composto": nomes[0],
+                        "maioria": {o: buckets[o] for o in outros},
+                    }
+                )
+    return out
+
+
 # ---------------------------------------------------------------- relatorio
 def build_report(car_dir: Path, out_path: Path) -> str:
     files = {p.name: IniFile(p) for p in sorted(car_dir.glob("*.ini"))}
+
+    # o .tbc as vezes chega renomeado para .ini (limitacao de upload)
+    tbc_path = next(
+        (p for p in sorted(car_dir.iterdir())
+         if p.is_file() and (p.suffix.lower() == ".tbc"
+                             or p.name.lower().endswith(".tbc.ini"))),
+        None,
+    )
+    tbc = parse_tbc(tbc_path) if tbc_path else []
+    radii = tyre_radii(tbc) if tbc else {}
+
     OUT: list[str] = []
     W = OUT.append
 
@@ -231,6 +351,9 @@ def build_report(car_dir: Path, out_path: Path) -> str:
         nsec = len([s for s in ini.sections if s.name])
         W(f"| `{n}` | {ini.path.stat().st_size} | {len(ini.lines)} | "
           f"{'sim' if ini.had_crlf else 'nao'} | {nsec} |")
+    if tbc_path:
+        W(f"\n- Pneu: `{tbc_path.name}` — {tbc_path.stat().st_size} bytes, "
+          f"**{len(tbc)} compostos** ({', '.join(c['name'] or '?' for c in tbc)}).")
 
     # ---------------- 2. blocos duplicados
     # chaves que o rF2 ACUMULA como linhas de tabela (a ultima nao sobrescreve)
@@ -368,6 +491,12 @@ def build_report(car_dir: Path, out_path: Path) -> str:
             "esse ponto e a rotula equivalente. O eixo mestre (kingpin) e a reta que liga a "
             "rotula inferior a superior.\n"
         )
+        R_AXLE = {
+            "FL_SPINDLE": radii.get("front"),
+            "FR_SPINDLE": radii.get("front"),
+            "RL_SPINDLE": radii.get("rear"),
+            "RR_SPINDLE": radii.get("rear"),
+        }
         for spindle, wheel in (("FL_SPINDLE", "FL_WHEEL"), ("RL_SPINDLE", "RL_WHEEL")):
             if spindle not in ch.bodies:
                 continue
@@ -411,21 +540,34 @@ def build_report(car_dir: Path, out_path: Path) -> str:
             wx = ch.bodies[wheel]["pos"][X]
             wy = ch.bodies[wheel]["pos"][Y]
             wz = ch.bodies[wheel]["pos"][Z]
-            W(f"\nOnde o eixo mestre cruza o solo, em funcao do raio carregado do pneu — "
-              f"**valor que vem do `.tbc`/`.tgm`, nao deste arquivo**:\n")
+            def cruza_solo(R):
+                """Onde o eixo mestre corta o plano do solo, relativo ao centro da roda."""
+                yg = wy - R
+                t = (yg - lo["world"][Y]) / d[Y]
+                return (lo["world"][X] + t * d[X] - wx,
+                        lo["world"][Z] + t * d[Z] - wz)
+
+            R_real = R_AXLE.get(spindle)
+            if R_real:
+                sx, sz = cruza_solo(R_real)
+                W(f"\nCom o raio do `.tbc` (**{f(R_real,5)} m**):")
+                W(f"- **Scrub radius: {abs(sx)*1000:.1f} mm** — o eixo mestre cruza o solo "
+                  f"**{'para dentro' if sx < 0 else 'para fora'}** do centro do pneu")
+                W(f"- **Trail mecanico: {abs(sz)*1000:.1f} mm** — cruza "
+                  f"**{'a frente' if sz < 0 else 'atras'}** do centro do pneu "
+                  f"(com caster positivo o esperado e 'a frente')")
+            W("\nSensibilidade (caso o raio carregado real diverga do `.tbc`):\n")
             W("| Raio carregado (m) | Lateral: scrub (mm) | Longitudinal: trail (mm) |")
             W("|---:|---:|---:|")
             for R in (0.30, 0.32, 0.34, 0.36):
-                yg = wy - R
-                t = (yg - lo["world"][Y]) / d[Y]
-                px = lo["world"][X] + t * d[X]
-                pz = lo["world"][Z] + t * d[Z]
-                W(f"| {R:.2f} | {(px - wx)*1000:+.1f} | {(pz - wz)*1000:+.1f} |")
-            W(f"\nConvecao de sinais (roda esquerda, X positivo = para fora):")
-            W(f"- **Lateral negativo** = o eixo mestre cruza o solo **para dentro** do centro "
-              f"do pneu, em direcao a linha de centro do carro.")
-            W(f"- **Longitudinal negativo** = cruza **a frente** do centro do pneu, o que "
-              f"corresponde a trail mecanico positivo (esperado com caster positivo).")
+                sx, sz = cruza_solo(R)
+                W(f"| {R:.2f} | {sx*1000:+.1f} | {sz*1000:+.1f} |")
+            W("\nConvecao de sinais (roda esquerda; X positivo = para fora, "
+              "Z positivo = para tras):")
+            W("- **Lateral negativo** = o eixo mestre cruza o solo **para dentro** do centro "
+              "do pneu, em direcao a linha de centro do carro.")
+            W("- **Longitudinal negativo** = cruza **a frente** do centro do pneu, o que "
+              "corresponde a trail mecanico positivo.")
             W(f"\n- Referencia: centro da roda em x={f(wx,4)}, y={f(wy,4)}, z={f(wz,4)}")
             W(f"- Offset roda↔manga: **{f(abs(wx - ch.bodies[spindle]['pos'][X])*1000,1)} mm** "
               f"(deve bater com `LocalOffsetB` do `*_BJ`)")
@@ -551,11 +693,15 @@ def build_report(car_dir: Path, out_path: Path) -> str:
                 except Exception:
                     rev = None
             if rev:
-                R = 0.34
+                R = radii.get("rear")
                 W(f"\n#### Velocidade por marcha no limitador de {f(rev,0)} rpm\n")
-                W(f"`v = (rpm · 2π / 60) · R / (relacao · diferencial · bevel)`, usando "
-                  f"**R = {R:.2f} m** como hipotese de raio carregado — o valor real vem do "
-                  f"`.tbc`.\n")
+                if R is None:
+                    R = 0.34
+                    W(f"`v = (rpm · 2π / 60) · R / (relacao · diferencial · bevel)`. "
+                      f"**`.tbc` nao encontrado** — usando R = {R:.2f} m como hipotese.\n")
+                else:
+                    W(f"`v = (rpm · 2π / 60) · R / (relacao · diferencial · bevel)`, com "
+                      f"**R = {f(R,5)} m** = raio traseiro do `.tbc` (eixo motriz).\n")
                 for e in finals:
                     a4, b4 = (float(x) for x in e.tuple)
                     fdv = b4 / a4
@@ -620,8 +766,64 @@ def build_report(car_dir: Path, out_path: Path) -> str:
                 for v, ks in dups.items():
                     W(f"- Marchas com mapa identico: {', '.join(ks)}")
 
-    # ---------------- 8. pendencias
-    W("\n## 8. Pendencias para fechar a engenharia reversa\n")
+    # ---------------- 8. pneus
+    if tbc:
+        def gv(c, ax, k):
+            return c.get(ax, {}).get(k, "—")
+
+        W("\n## 8. Pneus (`_tbc`)\n")
+        W(f"Arquivo: `{tbc_path.name}`\n")
+        W("| Eixo | `Radius` (m) | `Width` (m) | `Rim` (m) | `SpringBase` | `SpringkPa` | "
+          "`Damper` |")
+        W("|---|---:|---:|---:|---:|---:|---:|")
+        for ax, rot in (("front", "Dianteiro"), ("rear", "Traseiro")):
+            ref = next((c for c in tbc if c.get(ax)), None)
+            if not ref:
+                continue
+            aro = gv(ref, ax, "Rim")
+            aro = aro.split(",")[0].strip("(") if aro != "—" else "—"
+            W(f"| {rot} | {gv(ref, ax, 'Radius')} | {gv(ref, ax, 'Width')} | {aro} | "
+              f"{gv(ref, ax, 'SpringBase')} | {gv(ref, ax, 'SpringkPa')} | "
+              f"{gv(ref, ax, 'Damper')} |")
+
+        for ax, rot in (("front", "dianteiro"), ("rear", "traseiro")):
+            vals = {c[ax].get("Radius") for c in tbc if c.get(ax) and "Radius" in c[ax]}
+            if len(vals) > 1:
+                W(f"\n**Alerta:** o raio {rot} difere entre compostos: {sorted(vals)}")
+
+        W("\n### Grip por composto\n")
+        W("| Composto | Eixo | `DryLatLong` | `LatPeak` | `LongPeak` | `Temperatures` |")
+        W("|---|---|---|---|---|---|")
+        for c in tbc:
+            for ax in ("front", "rear"):
+                if not c.get(ax):
+                    continue
+                W(f"| {c['name']} | {'D' if ax == 'front' else 'T'} | "
+                  f"{gv(c, ax, 'DryLatLong')} | {gv(c, ax, 'LatPeak')} | "
+                  f"{gv(c, ax, 'LongPeak')} | {gv(c, ax, 'Temperatures')} |")
+
+        # O composto de chuva difere dos slicks POR DESIGN, entao comparar com
+        # ele junto so gera ruido. A comparacao util e entre os slicks.
+        slicks = [c for c in tbc if "WetWeather" not in c.get("props", {})]
+        alvo = slicks if len(slicks) >= 3 else tbc
+        if alvo is not tbc:
+            W(f"\nComparando apenas os slicks ({', '.join(c['name'] for c in slicks)}): o "
+              f"composto de chuva difere por design e foi excluido dessa checagem.\n")
+
+        for ax, rot in (("front", "Dianteiro"), ("rear", "Traseiro")):
+            outs = outlier_keys(alvo, ax)
+            if outs:
+                W(f"\n**{rot}: parametro fora do padrao entre os slicks**\n")
+                W("| Parametro | Composto divergente | Valor | Demais slicks |")
+                W("|---|---|---|---|")
+                for o in outs:
+                    maioria = "; ".join(
+                        f"`{v}` ({', '.join(n)})" for v, n in o["maioria"].items()
+                    )
+                    W(f"| `{o['key']}` | **{o['composto']}** | `{o['valor']}` | {maioria} |")
+
+    # ---------------- 9. pendencias
+    W("\n## 9. Pendencias para fechar a engenharia reversa\n")
     presentes = {p.suffix.lower() for p in car_dir.iterdir() if p.is_file()}
     preciso = [
         (".hdv", "Arquivo mestre do veiculo",
@@ -644,13 +846,13 @@ def build_report(car_dir: Path, out_path: Path) -> str:
         W(f"| `{ext}` | {papel} | {dep} | "
           f"{'presente' if ext in presentes else '**AUSENTE**'} |")
 
-    W("\n## 9. Como ler este relatorio\n")
+    W("\n## 10. Como ler este relatorio\n")
     W("- **Secoes 3 a 5** sao *medicoes* do carro como ele esta hoje. Nao dependem da planilha: "
       "saem direto da geometria do `_Chassis.ini`, com validacao interna (comprimento das barras "
       "contra `MinError0`, inercia de guinada contra o limite do modelo halter).")
-    W("- **Secoes 2, 6 e 7** sao *defeitos e alertas* — coisas para decidir antes de sair "
+    W("- **Secoes 2, 6, 7 e 8** sao *defeitos e alertas* — coisas para decidir antes de sair "
       "mexendo, porque qualquer baseline montado em cima de arquivo corrompido herda o erro.")
-    W("- **A Secao 8** e o que falta para completar o trabalho.")
+    W("- **A Secao 9** e o que falta para completar o trabalho.")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(OUT) + "\n", encoding="utf-8")
